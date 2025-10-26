@@ -8,7 +8,7 @@ export const typeOrmConfig: TypeOrmModuleOptions = {
   password: process.env.DB_PASSWORD || '',
   database: process.env.DB_NAME || 'sukadb',
   entities: [__dirname + '/../**/*.entity{.ts,.js}'],
-  synchronize: process.env.NODE_ENV === 'development',
+  synchronize: false, // IMPORTANTE: Desactivado porque usamos tablas existentes de PokeAPI
   logging: process.env.NODE_ENV === 'development',
   ssl: {
     rejectUnauthorized: false,

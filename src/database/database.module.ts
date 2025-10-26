@@ -10,7 +10,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
         type: 'postgres',
         url: configService.get('DATABASE_URL'),
         autoLoadEntities: true,
-        synchronize: configService.get('NODE_ENV') === 'development',
+        synchronize: false, // IMPORTANTE: Desactivado porque usamos tablas existentes de PokeAPI
         logging: configService.get('NODE_ENV') === 'development',
         ssl: {
           rejectUnauthorized: false, // Para AWS RDS

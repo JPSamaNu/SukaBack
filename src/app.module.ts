@@ -5,6 +5,8 @@ import { DatabaseModule } from './database/database.module';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { HealthModule } from './health/health.module';
+import { PokemonModule } from './pokemon/pokemon.module';
+import { GenerationsModule } from './generations/generations.module';
 
 @Module({
   imports: [
@@ -26,6 +28,8 @@ import { HealthModule } from './health/health.module';
     DatabaseModule,
     AuthModule,
     UsersModule,
+    PokemonModule,
+    GenerationsModule,
     
     // Módulo de salud para monitoring
     HealthModule,
