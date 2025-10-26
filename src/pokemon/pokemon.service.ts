@@ -280,12 +280,22 @@ export class PokemonService {
       SELECT 
         g.id,
         g.name,
-        gn.name as region,
-        COUNT(DISTINCT ps.id) as "pokemonCount"
+        CASE 
+          WHEN g.id = 1 THEN 'Kanto'
+          WHEN g.id = 2 THEN 'Johto'
+          WHEN g.id = 3 THEN 'Hoenn'
+          WHEN g.id = 4 THEN 'Sinnoh'
+          WHEN g.id = 5 THEN 'Unova'
+          WHEN g.id = 6 THEN 'Kalos'
+          WHEN g.id = 7 THEN 'Alola'
+          WHEN g.id = 8 THEN 'Galar'
+          WHEN g.id = 9 THEN 'Paldea'
+          ELSE 'Unknown'
+        END as region,
+        COUNT(DISTINCT ps.id)::integer as "pokemonCount"
       FROM pokemon_v2_generation g
-      LEFT JOIN pokemon_v2_generationname gn ON g.id = gn.generation_id AND gn.language_id = 9
       LEFT JOIN pokemon_v2_pokemonspecies ps ON ps.generation_id = g.id
-      GROUP BY g.id, g.name, gn.name
+      GROUP BY g.id, g.name
       ORDER BY g.id
     `;
 
