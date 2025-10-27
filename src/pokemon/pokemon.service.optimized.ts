@@ -249,4 +249,186 @@ export class PokemonServiceOptimized {
   async refreshMaterializedViews(): Promise<void> {
     await this.pokemonRepository.query(`SELECT refresh_materialized_views()`);
   }
+
+  /**
+   * Obtener cadena de evolución de un Pokemon
+   * Retorna: evolvesFrom (pre-evolución) y evolvesTo (evoluciones)
+   */
+  async getEvolutionChain(pokemonId: number): Promise<any> {
+    try {
+      // 1. Obtener evolution_chain_id del Pokemon
+      const chainResult = await this.pokemonRepository.query(
+        `SELECT evolution_chain_id FROM pokemon_v2_pokemonspecies WHERE id = $1`,
+        [pokemonId]
+      );
+
+      if (chainResult.length === 0) {
+        return {
+          evolvesFrom: null,
+          evolvesTo: [],
+        };
+      }
+
+      const chainId = chainResult[0].evolution_chain_id;
+
+      // 2. Obtener pre-evolución (de dónde viene)
+      const preEvolution = await this.pokemonRepository.query(
+        `
+        SELECT 
+          ps.id,
+          ps.name,
+          pe.min_level,
+          pe.evolution_item_id,
+          pi.name as item_name,
+          pe.min_happiness,
+          pe.min_affection,
+          pe.time_of_day,
+          pet.name as trigger,
+          pe.needs_overworld_rain,
+          pe.known_move_id,
+          pm.name as known_move_name,
+          pe.location_id,
+          pl.name as location_name,
+          pe.gender_id,
+          pe.min_beauty,
+          pe.relative_physical_stats
+        FROM pokemon_v2_pokemonevolution pe
+        JOIN pokemon_v2_pokemonspecies ps ON ps.evolution_chain_id = $1 AND ps.id < $2
+        LEFT JOIN pokemon_v2_evolutiontrigger pet ON pe.evolution_trigger_id = pet.id
+        LEFT JOIN pokemon_v2_item pi ON pe.evolution_item_id = pi.id
+        LEFT JOIN pokemon_v2_move pm ON pe.known_move_id = pm.id
+        LEFT JOIN pokemon_v2_location pl ON pe.location_id = pl.id
+        WHERE pe.evolved_species_id = $2
+        ORDER BY ps.id DESC
+        LIMIT 1
+        `,
+        [chainId, pokemonId]
+      );
+
+      // 3. Obtener evoluciones (hacia dónde va)
+      const evolutions = await this.pokemonRepository.query(
+        `
+        SELECT 
+          ps_to.id,
+          ps_to.name,
+          pe.min_level,
+          pe.evolution_item_id,
+          pi.name as item_name,
+          pe.min_happiness,
+          pe.min_affection,
+          pe.time_of_day,
+          pet.name as trigger,
+          pe.needs_overworld_rain,
+          pe.known_move_id,
+          pm.name as known_move_name,
+          pe.location_id,
+          pl.name as location_name,
+          pe.gender_id,
+          pe.min_beauty,
+          pe.relative_physical_stats
+        FROM pokemon_v2_pokemonevolution pe
+        JOIN pokemon_v2_pokemonspecies ps ON ps.id = $1
+        JOIN pokemon_v2_pokemonspecies ps_to ON pe.evolved_species_id = ps_to.id
+        LEFT JOIN pokemon_v2_evolutiontrigger pet ON pe.evolution_trigger_id = pet.id
+        LEFT JOIN pokemon_v2_item pi ON pe.evolution_item_id = pi.id
+        LEFT JOIN pokemon_v2_move pm ON pe.known_move_id = pm.id
+        LEFT JOIN pokemon_v2_location pl ON pe.location_id = pl.id
+        WHERE ps.evolution_chain_id = ps_to.evolution_chain_id
+          AND ps_to.id > $1
+          AND ps_to.evolution_chain_id = $2
+        `,
+        [pokemonId, chainId]
+      );
+
+      // 4. Obtener sprites para cada Pokemon en la cadena
+      const evolvesFrom = preEvolution.length > 0 ? {
+        id: preEvolution[0].id,
+        name: preEvolution[0].name,
+        sprite: `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${preEvolution[0].id}.png`,
+        requirements: this.formatEvolutionRequirements(preEvolution[0]),
+      } : null;
+
+      const evolvesTo = evolutions.map((evo: any) => ({
+        id: evo.id,
+        name: evo.name,
+        sprite: `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${evo.id}.png`,
+        requirements: this.formatEvolutionRequirements(evo),
+      }));
+
+      return {
+        evolvesFrom,
+        evolvesTo,
+      };
+    } catch (error) {
+      console.error('Error getting evolution chain:', error);
+      return {
+        evolvesFrom: null,
+        evolvesTo: [],
+      };
+    }
+  }
+
+  /**
+   * Formatear los requisitos de evolución en un string legible
+   */
+  private formatEvolutionRequirements(evo: any): string {
+    const requirements = [];
+
+    if (evo.min_level) {
+      requirements.push(`Nivel ${evo.min_level}`);
+    }
+
+    if (evo.item_name) {
+      requirements.push(evo.item_name.replace(/-/g, ' '));
+    }
+
+    if (evo.min_happiness) {
+      requirements.push(`Felicidad ${evo.min_happiness}`);
+    }
+
+    if (evo.min_affection) {
+      requirements.push(`Afecto ${evo.min_affection}`);
+    }
+
+    if (evo.known_move_name) {
+      requirements.push(`Conocer ${evo.known_move_name.replace(/-/g, ' ')}`);
+    }
+
+    if (evo.location_name) {
+      requirements.push(`En ${evo.location_name.replace(/-/g, ' ')}`);
+    }
+
+    if (evo.time_of_day && evo.time_of_day !== '') {
+      requirements.push(evo.time_of_day === 'day' ? 'De día' : 'De noche');
+    }
+
+    if (evo.needs_overworld_rain) {
+      requirements.push('Con lluvia');
+    }
+
+    if (evo.min_beauty) {
+      requirements.push(`Belleza ${evo.min_beauty}`);
+    }
+
+    if (evo.gender_id === 1) {
+      requirements.push('♀ Hembra');
+    } else if (evo.gender_id === 2) {
+      requirements.push('♂ Macho');
+    }
+
+    if (evo.relative_physical_stats === 1) {
+      requirements.push('Ataque > Defensa');
+    } else if (evo.relative_physical_stats === -1) {
+      requirements.push('Defensa > Ataque');
+    } else if (evo.relative_physical_stats === 0) {
+      requirements.push('Ataque = Defensa');
+    }
+
+    if (evo.trigger === 'trade') {
+      requirements.push('Intercambio');
+    }
+
+    return requirements.length > 0 ? requirements.join(', ') : 'Nivel de amistad';
+  }
 }
+

@@ -93,4 +93,13 @@ export class PokemonController {
   async findOne(@Param('id', ParseIntPipe) id: number) {
     return this.pokemonService.findOne(id);
   }
+
+  /**
+   * GET /pokemon/:id/evolution
+   * Obtener cadena de evolución de un Pokemon por ID
+   */
+  @Get(':id/evolution')
+  async getEvolutionChain(@Param('id', ParseIntPipe) id: number) {
+    return this.pokemonService.getEvolutionChain(id);
+  }
 }
