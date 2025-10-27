@@ -25,12 +25,12 @@ export class PokemonServiceOptimized {
     limit: number;
     totalPages: number;
   }> {
-    const { page = 1, limit = 20, generation, search, sortBy = 'id', sortOrder = 'ASC' } = query;
+    const { page = 1, limit = 20, generation, type, search, sortBy = 'id', sortOrder = 'ASC' } = query;
 
     // Usar stored procedure optimizada
     const results = await this.pokemonRepository.query(
-      `SELECT * FROM get_pokemon_paginated($1, $2, $3, $4, $5, $6)`,
-      [page, limit, generation || null, search || null, sortBy, sortOrder]
+      `SELECT * FROM get_pokemon_paginated($1, $2, $3, $4, $5, $6, $7)`,
+      [page, limit, generation || null, search || null, sortBy, sortOrder, type || null]
     );
 
     if (results.length === 0) {
