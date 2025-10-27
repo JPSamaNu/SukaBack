@@ -1,5 +1,5 @@
 import { Controller, Get, Param, Query, ParseIntPipe, UseGuards } from '@nestjs/common';
-import { PokemonService } from './pokemon.service';
+import { PokemonServiceOptimized as PokemonService } from './pokemon.service.optimized';
 import { PokemonQueryDto } from './dto/pokemon.dto';
 
 @Controller('pokemon')

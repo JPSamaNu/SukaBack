@@ -1,5 +1,5 @@
 import { Controller, Get, Param, ParseIntPipe } from '@nestjs/common';
-import { PokemonService } from '../pokemon/pokemon.service';
+import { PokemonServiceOptimized as PokemonService } from '../pokemon/pokemon.service.optimized';
 
 @Controller('generations')
 export class GenerationsController {
