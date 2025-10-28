@@ -251,8 +251,118 @@ export class PokemonServiceOptimized {
   }
 
   /**
-   * Obtener cadena de evolución de un Pokemon
-   * Retorna: evolvesFrom (pre-evolución) y evolvesTo (evoluciones)
+   * Obtener formas alternativas de un Pokemon (mega evoluciones, formas regionales, etc.)
+   */
+  async getPokemonForms(pokemonId: number): Promise<any> {
+    try {
+      // Primero obtenemos el species_id del Pokemon
+      const speciesResult = await this.pokemonRepository.query(
+        `SELECT pokemon_species_id FROM pokemon_v2_pokemon WHERE id = $1`,
+        [pokemonId]
+      );
+
+      if (speciesResult.length === 0) {
+        return { forms: [], megaEvolutions: [], regionalForms: [], otherForms: [] };
+      }
+
+      const speciesId = speciesResult[0].pokemon_species_id;
+
+      // Obtener todas las formas del Pokemon
+      const formsQuery = `
+        SELECT 
+          p.id as pokemon_id,
+          p.name as pokemon_name,
+          pf.id as form_id,
+          pf.name as form_name,
+          pf.is_default,
+          pf.is_mega,
+          pf.is_battle_only,
+          pf.form_order,
+          pfs.sprites
+        FROM pokemon_v2_pokemon p
+        JOIN pokemon_v2_pokemonform pf ON p.id = pf.pokemon_id
+        LEFT JOIN pokemon_v2_pokemonformsprites pfs ON pf.id = pfs.pokemon_form_id
+        WHERE p.pokemon_species_id = $1
+        ORDER BY pf.form_order
+      `;
+
+      const forms = await this.pokemonRepository.query(formsQuery, [speciesId]);
+
+      console.log(`🔍 Species ID: ${speciesId}, Forms found: ${forms.length}`);
+      console.log('📋 Forms data:', JSON.stringify(forms, null, 2));
+
+      // Separar por categorías
+      const megaEvolutions = [];
+      const regionalForms = [];
+      const otherForms = [];
+
+      for (const form of forms) {
+        // Saltar el Pokemon original (el que estamos consultando)
+        if (form.pokemon_id === pokemonId) {
+          continue;
+        }
+
+        // Extraer sprite del JSON
+        let sprite = null;
+        if (form.sprites) {
+          try {
+            const spriteObj = typeof form.sprites === 'string' 
+              ? JSON.parse(form.sprites) 
+              : form.sprites;
+            sprite = spriteObj.front_default || null;
+          } catch (e) {
+            sprite = null;
+          }
+        }
+
+        // Si no hay sprite en pokemonformsprites, usar el sprite oficial
+        if (!sprite) {
+          sprite = `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${form.pokemon_id}.png`;
+        }
+
+        const formData = {
+          pokemonId: form.pokemon_id,
+          pokemonName: form.pokemon_name,
+          formId: form.form_id,
+          formName: form.form_name,
+          sprite: sprite,
+          isBattleOnly: form.is_battle_only,
+        };
+
+        if (form.is_mega) {
+          megaEvolutions.push(formData);
+        } else if (form.form_name.includes('alola') || 
+                   form.form_name.includes('galar') || 
+                   form.form_name.includes('hisui') ||
+                   form.form_name.includes('paldea')) {
+          regionalForms.push(formData);
+        } else {
+          otherForms.push(formData);
+        }
+      }
+
+      console.log('✅ Final result:', {
+        megaEvolutions: megaEvolutions.length,
+        regionalForms: regionalForms.length,
+        otherForms: otherForms.length,
+        totalForms: forms.length - 1
+      });
+
+      return {
+        megaEvolutions,
+        regionalForms,
+        otherForms,
+        totalForms: forms.length - 1, // Excluye la forma por defecto
+      };
+    } catch (error) {
+      console.error('Error getting pokemon forms:', error);
+      return { forms: [], megaEvolutions: [], regionalForms: [], otherForms: [] };
+    }
+  }
+
+  /**
+   * Obtener cadena de evolución COMPLETA de un Pokemon
+   * Retorna: TODA la cadena evolutiva, no solo las evoluciones directas
    */
   async getEvolutionChain(pokemonId: number): Promise<any> {
     try {
@@ -263,20 +373,23 @@ export class PokemonServiceOptimized {
       );
 
       if (chainResult.length === 0) {
-        return {
-          evolvesFrom: null,
-          evolvesTo: [],
-        };
+        return { chain: [] };
       }
 
       const chainId = chainResult[0].evolution_chain_id;
 
-      // 2. Obtener pre-evolución (de dónde viene)
-      const preEvolution = await this.pokemonRepository.query(
+      // 2. Obtener TODOS los Pokemon de esta cadena (ordenados por ID)
+      const allSpecies = await this.pokemonRepository.query(
+        `SELECT id, name FROM pokemon_v2_pokemonspecies 
+         WHERE evolution_chain_id = $1 ORDER BY id`,
+        [chainId]
+      );
+
+      // 3. Obtener TODAS las evoluciones de la cadena
+      const allEvolutions = await this.pokemonRepository.query(
         `
         SELECT 
-          ps.id,
-          ps.name,
+          pe.evolved_species_id,
           pe.min_level,
           pe.evolution_item_id,
           pi.name as item_name,
@@ -293,78 +406,103 @@ export class PokemonServiceOptimized {
           pe.min_beauty,
           pe.relative_physical_stats
         FROM pokemon_v2_pokemonevolution pe
-        JOIN pokemon_v2_pokemonspecies ps ON ps.evolution_chain_id = $1 AND ps.id < $2
+        JOIN pokemon_v2_pokemonspecies ps ON pe.evolved_species_id = ps.id
         LEFT JOIN pokemon_v2_evolutiontrigger pet ON pe.evolution_trigger_id = pet.id
         LEFT JOIN pokemon_v2_item pi ON pe.evolution_item_id = pi.id
         LEFT JOIN pokemon_v2_move pm ON pe.known_move_id = pm.id
         LEFT JOIN pokemon_v2_location pl ON pe.location_id = pl.id
-        WHERE pe.evolved_species_id = $2
-        ORDER BY ps.id DESC
-        LIMIT 1
+        WHERE ps.evolution_chain_id = $1
+        ORDER BY pe.evolved_species_id
         `,
-        [chainId, pokemonId]
+        [chainId]
       );
 
-      // 3. Obtener evoluciones (hacia dónde va)
-      const evolutions = await this.pokemonRepository.query(
-        `
-        SELECT 
-          ps_to.id,
-          ps_to.name,
-          pe.min_level,
-          pe.evolution_item_id,
-          pi.name as item_name,
-          pe.min_happiness,
-          pe.min_affection,
-          pe.time_of_day,
-          pet.name as trigger,
-          pe.needs_overworld_rain,
-          pe.known_move_id,
-          pm.name as known_move_name,
-          pe.location_id,
-          pl.name as location_name,
-          pe.gender_id,
-          pe.min_beauty,
-          pe.relative_physical_stats
-        FROM pokemon_v2_pokemonevolution pe
-        JOIN pokemon_v2_pokemonspecies ps ON ps.id = $1
-        JOIN pokemon_v2_pokemonspecies ps_to ON pe.evolved_species_id = ps_to.id
-        LEFT JOIN pokemon_v2_evolutiontrigger pet ON pe.evolution_trigger_id = pet.id
-        LEFT JOIN pokemon_v2_item pi ON pe.evolution_item_id = pi.id
-        LEFT JOIN pokemon_v2_move pm ON pe.known_move_id = pm.id
-        LEFT JOIN pokemon_v2_location pl ON pe.location_id = pl.id
-        WHERE ps.evolution_chain_id = ps_to.evolution_chain_id
-          AND ps_to.id > $1
-          AND ps_to.evolution_chain_id = $2
-        `,
-        [pokemonId, chainId]
-      );
+      // 4. Crear un mapa: species_id -> detalles de evolución
+      // evolved_species_id es el Pokemon DESTINO
+      // El Pokemon ORIGEN es el anterior en el array (por ID)
+      const evolutionMap = new Map();
+      allEvolutions.forEach((evo: any) => {
+        evolutionMap.set(evo.evolved_species_id, evo);
+      });
 
-      // 4. Obtener sprites para cada Pokemon en la cadena
-      const evolvesFrom = preEvolution.length > 0 ? {
-        id: preEvolution[0].id,
-        name: preEvolution[0].name,
-        sprite: `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${preEvolution[0].id}.png`,
-        requirements: this.formatEvolutionRequirements(preEvolution[0]),
-      } : null;
+      // 5. Encontrar el Pokemon base (el primero que NO aparece como evolved_species_id)
+      const evolvedIds = new Set(allEvolutions.map((e: any) => e.evolved_species_id));
+      const baseSpecies = allSpecies.find((s: any) => !evolvedIds.has(s.id));
+      
+      if (!baseSpecies) {
+        return { chain: [] };
+      }
 
-      const evolvesTo = evolutions.map((evo: any) => ({
-        id: evo.id,
-        name: evo.name,
-        sprite: `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${evo.id}.png`,
-        requirements: this.formatEvolutionRequirements(evo),
-      }));
+      // 6. Construir la cadena completa recursivamente
+      const buildChain = (currentSpecies: any): any => {
+        const evolvesTo = [];
+        
+        // Obtener el índice del Pokemon actual
+        const currentIndex = allSpecies.findIndex((s: any) => s.id === currentSpecies.id);
+        
+        // Buscar TODOS los Pokemon siguientes que evolucionan directamente desde este
+        // Para cadenas simples (Charmander→Charmeleon→Charizard): solo hay UNO siguiente
+        // Para cadenas ramificadas (Eevee→múltiples): hay VARIOS siguientes
+        
+        // Estrategia: Agrupar por "generación de evolución"
+        // Gen 1: Pokemon que evolucionan directamente desde current
+        // Los reconocemos porque:
+        // 1. Tienen evolved_species_id (están en evolutionMap)
+        // 2. NO hay otro Pokemon con evolved_species_id entre current y ellos
+        
+        let foundFirstEvolution = false;
+        
+        for (let i = currentIndex + 1; i < allSpecies.length; i++) {
+          const candidate = allSpecies[i];
+          
+          // ¿Este candidato tiene registro de evolución?
+          if (!evolutionMap.has(candidate.id)) {
+            // Es un Pokemon base (sin pre-evolución)
+            // En cadenas ramificadas, podría haber múltiples bases en paralelo
+            // Pero una vez que encuentro un base DESPUÉS de la primera evolución,
+            // ya no puedo continuar
+            if (foundFirstEvolution) {
+              break;
+            }
+            continue;
+          }
+          
+          // Tiene evolución. ¿Es directo desde current?
+          // Verifico si hay algún Pokemon con evolución entre current y candidate
+          const pokemonBetween = allSpecies.slice(currentIndex + 1, i);
+          const hasEvolutionInBetween = pokemonBetween.some((p: any) => evolutionMap.has(p.id));
+          
+          if (!hasEvolutionInBetween) {
+            // ¡Es una evolución directa!
+            foundFirstEvolution = true;
+            const evolutionDetails = evolutionMap.get(candidate.id);
+            const childChain = buildChain(candidate);
+            if (childChain) {
+              childChain.requirements = this.formatEvolutionRequirements(evolutionDetails);
+              evolvesTo.push(childChain);
+            }
+          }
+        }
+
+        return {
+          id: currentSpecies.id,
+          name: currentSpecies.name,
+          sprite: `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${currentSpecies.id}.png`,
+          isCurrent: currentSpecies.id === pokemonId,
+          requirements: null, // Se asigna desde el padre
+          evolvesTo,
+        };
+      };
+
+      // 7. Construir la cadena completa desde el base
+      const fullChain = buildChain(baseSpecies);
 
       return {
-        evolvesFrom,
-        evolvesTo,
+        chain: fullChain ? [fullChain] : [],
       };
     } catch (error) {
       console.error('Error getting evolution chain:', error);
-      return {
-        evolvesFrom: null,
-        evolvesTo: [],
-      };
+      return { chain: [] };
     }
   }
 
@@ -430,5 +568,85 @@ export class PokemonServiceOptimized {
 
     return requirements.length > 0 ? requirements.join(', ') : 'Nivel de amistad';
   }
-}
 
+  /**
+   * Obtener ubicaciones de captura de un Pokémon
+   */
+  async getPokemonLocations(pokemonId: number): Promise<any[]> {
+    const query = `
+      SELECT 
+        e.id,
+        e.min_level,
+        e.max_level,
+        la.name as location_area,
+        la.game_index as location_area_game_index,
+        l.name as location,
+        l.id as location_id,
+        v.name as version,
+        v.id as version_id,
+        vg.name as version_group,
+        vg.id as version_group_id,
+        em.name as encounter_method,
+        em.id as encounter_method_id,
+        es.rarity,
+        g.name as generation
+      FROM pokemon_v2_encounter e
+      LEFT JOIN pokemon_v2_locationarea la ON e.location_area_id = la.id
+      LEFT JOIN pokemon_v2_location l ON la.location_id = l.id
+      LEFT JOIN pokemon_v2_encounterslot es ON e.encounter_slot_id = es.id
+      LEFT JOIN pokemon_v2_encountermethod em ON es.encounter_method_id = em.id
+      LEFT JOIN pokemon_v2_version v ON e.version_id = v.id
+      LEFT JOIN pokemon_v2_versiongroup vg ON v.version_group_id = vg.id
+      LEFT JOIN pokemon_v2_generation g ON vg.generation_id = g.id
+      WHERE e.pokemon_id = $1
+      ORDER BY vg.id, v.id, l.id
+    `;
+
+    return this.pokemonRepository.query(query, [pokemonId]);
+  }
+
+  /**
+   * Obtener ubicaciones de captura de TODOS los Pokémon
+   * Optimizado con agrupación en la query
+   */
+  async getAllPokemonLocations(): Promise<any[]> {
+    const query = `
+      SELECT 
+        e.pokemon_id,
+        p.name as pokemon_name,
+        COUNT(e.id) as total_encounters,
+        COUNT(DISTINCT v.id) as total_versions,
+        json_agg(
+          jsonb_build_object(
+            'version', v.name,
+            'version_id', v.id,
+            'version_group', vg.name,
+            'version_group_id', vg.id,
+            'generation', g.name,
+            'location', l.name,
+            'location_id', l.id,
+            'location_area', la.name,
+            'min_level', e.min_level,
+            'max_level', e.max_level,
+            'encounter_method', em.name,
+            'encounter_method_id', em.id,
+            'rarity', es.rarity
+          )
+        ) as encounters
+      FROM pokemon_v2_encounter e
+      LEFT JOIN pokemon_v2_pokemon p ON e.pokemon_id = p.id
+      LEFT JOIN pokemon_v2_locationarea la ON e.location_area_id = la.id
+      LEFT JOIN pokemon_v2_location l ON la.location_id = l.id
+      LEFT JOIN pokemon_v2_encounterslot es ON e.encounter_slot_id = es.id
+      LEFT JOIN pokemon_v2_encountermethod em ON es.encounter_method_id = em.id
+      LEFT JOIN pokemon_v2_version v ON e.version_id = v.id
+      LEFT JOIN pokemon_v2_versiongroup vg ON v.version_group_id = vg.id
+      LEFT JOIN pokemon_v2_generation g ON vg.generation_id = g.id
+      WHERE p.is_default = true
+      GROUP BY e.pokemon_id, p.name
+      ORDER BY e.pokemon_id
+    `;
+
+    return this.pokemonRepository.query(query);
+  }
+}

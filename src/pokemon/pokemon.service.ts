@@ -316,5 +316,40 @@ export class PokemonService {
     const [result] = await this.pokemonRepository.query(query, [generation]);
     return parseInt(result.count, 10);
   }
-}
 
+  /**
+   * Obtener ubicaciones de captura de un Pokémon
+   */
+  async getPokemonLocations(pokemonId: number): Promise<any[]> {
+    const query = `
+      SELECT 
+        e.id,
+        e.min_level,
+        e.max_level,
+        la.name as location_area,
+        la.game_index as location_area_game_index,
+        l.name as location,
+        l.id as location_id,
+        v.name as version,
+        v.id as version_id,
+        vg.name as version_group,
+        vg.id as version_group_id,
+        em.name as encounter_method,
+        em.id as encounter_method_id,
+        es.rarity,
+        g.name as generation
+      FROM pokemon_v2_encounter e
+      LEFT JOIN pokemon_v2_locationarea la ON e.location_area_id = la.id
+      LEFT JOIN pokemon_v2_location l ON la.location_id = l.id
+      LEFT JOIN pokemon_v2_encounterslot es ON e.encounter_slot_id = es.id
+      LEFT JOIN pokemon_v2_encountermethod em ON es.encounter_method_id = em.id
+      LEFT JOIN pokemon_v2_version v ON e.version_id = v.id
+      LEFT JOIN pokemon_v2_versiongroup vg ON v.version_group_id = vg.id
+      LEFT JOIN pokemon_v2_generation g ON vg.generation_id = g.id
+      WHERE e.pokemon_id = $1
+      ORDER BY vg.id, v.id, l.id
+    `;
+
+    return this.pokemonRepository.query(query, [pokemonId]);
+  }
+}
