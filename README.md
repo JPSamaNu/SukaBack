@@ -80,9 +80,9 @@ PORT=3000
 JWT_SECRET=tu_secret_super_seguro_para_access_tokens
 JWT_REFRESH_SECRET=tu_secret_super_seguro_para_refresh_tokens
 
-# JWT Timeouts
-JWT_ACCESS_TTL=15m
-JWT_REFRESH_TTL=7d
+# JWT Timeouts (tokens de larga duración para autenticación persistente)
+JWT_ACCESS_TTL=30d
+JWT_REFRESH_TTL=90d
 
 # Base de datos PostgreSQL (AWS RDS)
 DATABASE_URL=postgresql://suka:TU_PASSWORD@sukadb.c6pq4u2yk89i.us-east-1.rds.amazonaws.com:5432/sukadb
@@ -157,15 +157,24 @@ http://localhost:3000/docs
 
 ## 🔐 Autenticación
 
+### Estrategia de Autenticación Persistente
+
+SukaDex usa una estrategia de **autenticación de larga duración** diseñada para UX óptima:
+
+- ✅ **Access Token**: Válido por **30 días** (almacenado en localStorage del cliente)
+- ✅ **Refresh Token**: Válido por **90 días** (cookie httpOnly segura)
+- ✅ **Una sola autenticación**: El usuario no necesita volver a iniciar sesión frecuentemente
+- ✅ **Persistencia completa**: La sesión sobrevive recargas y cierres del navegador
+
 ### Flujo JWT
-1. **Registro/Login**: Devuelve `access_token` y guarda `refresh_token` en cookie httpOnly
+1. **Registro/Login**: Devuelve `access_token` (30 días) y guarda `refresh_token` (90 días) en cookie httpOnly
 2. **Requests**: Usar `Authorization: Bearer <access_token>`
-3. **Refresh**: Automático con cookie o manual con token
-4. **Logout**: Limpia cookies y tokens
+3. **Refresh**: Solo si el access token expira (raro con 30 días de validez)
+4. **Logout**: Limpia cookies, localStorage y tokens
 
 ### Ejemplo de Login
 ```javascript
-const response = await fetch('http://localhost:3000/api/v1/auth/login', {
+const response = await fetch('http://localhost:2727/api/v1/auth/login', {
   method: 'POST',
   headers: {
     'Content-Type': 'application/json',
@@ -178,11 +187,12 @@ const response = await fetch('http://localhost:3000/api/v1/auth/login', {
 });
 
 const { access_token, user } = await response.json();
+// El frontend almacena access_token en localStorage para persistencia
 ```
 
 ### Ejemplo de Request Autenticado
 ```javascript
-const response = await fetch('http://localhost:3000/api/v1/users/me', {
+const response = await fetch('http://localhost:2727/api/v1/users/me', {
   headers: {
     'Authorization': `Bearer ${access_token}`,
     'Content-Type': 'application/json',
