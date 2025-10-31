@@ -138,6 +138,9 @@ export class PokemonServiceOptimized {
 
     const pokemon = results[0];
 
+    const moves = await this.getPokemonMovesByLevel(pokemon.id);
+    const classification = await this.getPokemonClassification(pokemon.species_id);
+
     return {
       id: pokemon.id,
       name: pokemon.name,
@@ -152,6 +155,86 @@ export class PokemonServiceOptimized {
       abilities: pokemon.abilities, // JSONB: [{name: string, slot: number, is_hidden: boolean}]
       stats: pokemon.stats, // JSONB: [{name: string, base_stat: number, effort: number}]
       sprites: pokemon.sprites,
+      moves,
+      classification,
+    };
+  }
+
+  /**
+   * Obtener movimientos que aprende por nivel (versión optimizada)
+   */
+  private async getPokemonMovesByLevel(pokemonId: number): Promise<Array<{ 
+    level: number; 
+    name: string; 
+    type: string;
+    power: number | null;
+    accuracy: number | null;
+    pp: number;
+    damageClass: string;
+  }>> {
+    const query = `
+      SELECT pm.level,
+             m.name,
+             t.name as type,
+             m.power,
+             m.accuracy,
+             m.pp,
+             dc.name as damageClass
+      FROM pokemon_v2_pokemonmove pm
+      INNER JOIN pokemon_v2_move m ON pm.move_id = m.id
+      INNER JOIN pokemon_v2_type t ON m.type_id = t.id
+      INNER JOIN pokemon_v2_movedamageclass dc ON m.move_damage_class_id = dc.id
+      INNER JOIN pokemon_v2_movelearnmethod mlm ON pm.move_learn_method_id = mlm.id
+      WHERE pm.pokemon_id = $1
+        AND mlm.name = 'level-up'
+        AND pm.level IS NOT NULL
+      ORDER BY pm.level ASC, m.name
+    `;
+
+    const results = await this.pokemonRepository.query(query, [pokemonId]);
+    return results;
+  }
+
+  /**
+   * Obtener clasificación del Pokémon (legendario, mítico, bebé, cría, etc.)
+   */
+  private async getPokemonClassification(speciesId: number): Promise<any> {
+    const speciesQuery = `
+      SELECT 
+        ps.is_legendary as "isLegendary",
+        ps.is_mythical as "isMythical",
+        ps.is_baby as "isBaby",
+        ps.capture_rate as "captureRate",
+        ps.base_happiness as "baseHappiness",
+        ps.hatch_counter as "hatchCounter",
+        ps.gender_rate as "genderRate",
+        gr.name as "growthRate",
+        ph.name as habitat,
+        pc.name as color,
+        psh.name as shape
+      FROM pokemon_v2_pokemonspecies ps
+      LEFT JOIN pokemon_v2_growthrate gr ON ps.growth_rate_id = gr.id
+      LEFT JOIN pokemon_v2_pokemonhabitat ph ON ps.pokemon_habitat_id = ph.id
+      LEFT JOIN pokemon_v2_pokemoncolor pc ON ps.pokemon_color_id = pc.id
+      LEFT JOIN pokemon_v2_pokemonshape psh ON ps.pokemon_shape_id = psh.id
+      WHERE ps.id = $1
+    `;
+
+    const [species] = await this.pokemonRepository.query(speciesQuery, [speciesId]);
+
+    const eggGroupsQuery = `
+      SELECT eg.name
+      FROM pokemon_v2_pokemonegggroup peg
+      INNER JOIN pokemon_v2_egggroup eg ON peg.egg_group_id = eg.id
+      WHERE peg.pokemon_species_id = $1
+    `;
+
+    const eggGroupsResults = await this.pokemonRepository.query(eggGroupsQuery, [speciesId]);
+    const eggGroups = eggGroupsResults.map((r: any) => r.name);
+
+    return {
+      ...species,
+      eggGroups,
     };
   }
 
