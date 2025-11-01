@@ -10,6 +10,7 @@ import { GenerationsModule } from './generations/generations.module';
 import { MovesModule } from './moves/moves.module';
 import { ItemsModule } from './items/items.module';
 import { BerriesModule } from './berries/berries.module';
+import { GamesModule } from './games/games.module';
 
 @Module({
   imports: [
@@ -36,6 +37,7 @@ import { BerriesModule } from './berries/berries.module';
     MovesModule,
     ItemsModule,
     BerriesModule,
+    GamesModule,
     
     // Módulo de salud para monitoring
     HealthModule,
