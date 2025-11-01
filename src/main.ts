@@ -19,9 +19,26 @@ async function bootstrap() {
   app.use(helmet());
   app.use(cookieParser());
 
-  // CORS configurado para frontend React
+  // CORS configurado para frontend React (desarrollo y producción)
+  const allowedOrigins = [
+    'https://sukadex.net',
+    'https://www.sukadex.net',
+    'https://api.sukadex.net',
+    'http://localhost:5173',
+    'http://localhost:2769',
+  ];
+
   app.enableCors({
-    origin: configService.get('CORS_ORIGIN', 'http://localhost:5173'),
+    origin: (origin, callback) => {
+      // Permitir requests sin origin (como Postman, curl, etc.)
+      if (!origin) return callback(null, true);
+      
+      if (allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error('Not allowed by CORS'));
+      }
+    },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
@@ -58,10 +75,22 @@ async function bootstrap() {
     .build();
 
   const document = SwaggerModule.createDocument(app, config);
+  
+  // Configurar servidor base de Swagger (relativo para funcionar en cualquier dominio)
+  document.servers = [
+    {
+      url: '/api/v1',
+      description: 'Servidor actual (producción o desarrollo)',
+    },
+  ];
+
   SwaggerModule.setup('docs', app, document, {
     customSiteTitle: 'SukaBack API Docs',
     customfavIcon: 'https://nestjs.com/img/logo_text.svg',
     customCss: '.swagger-ui .topbar { display: none }',
+    swaggerOptions: {
+      persistAuthorization: true, // Mantener el token JWT tras recargar
+    },
   });
 
   // Puerto del servidor
