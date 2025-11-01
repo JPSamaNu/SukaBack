@@ -1,12 +1,36 @@
 # 🔍 Diagnóstico de Problemas en Producción
 
-## ❌ Problemas Reportados
-1. No se puede acceder a `https://api.sukadex.net/api/v1/health`
-2. `/docs` muestra errores incluso en el login
+## ❌ Problemas Reportados (RESUELTOS)
+1. ~~No se puede acceder a `https://api.sukadex.net/api/v1/health`~~ ✅
+2. ~~`/docs` muestra errores incluso en el login~~ ✅
+3. ~~Error: Cannot find module 'bcrypt'~~ ✅ **REEMPLAZADO POR bcryptjs**
+
+## 🎯 Solución Aplicada
+- Reemplazado `bcrypt` (módulo nativo) por `bcryptjs` (100% JavaScript)
+- Sin dependencias de compilación nativa
+- Compatible con Amazon Linux sin herramientas adicionales
 
 ---
 
-## 🔧 Comandos de Diagnóstico
+## � ACTUALIZACIÓN RÁPIDA (USA ESTO)
+
+### Script Automático de Actualización
+```bash
+cd /var/www/SukaBack
+bash update-server.sh
+```
+
+Este script hace todo automáticamente:
+- ✅ Descarga cambios de GitHub
+- ✅ Limpia `node_modules`
+- ✅ Instala dependencias con npm
+- ✅ Compila el proyecto
+- ✅ Reinicia PM2
+- ✅ Muestra logs y estado
+
+---
+
+## 🔧 Actualización Manual (Paso a Paso)
 
 ### 1. Verificar que PM2 esté corriendo
 ```bash
