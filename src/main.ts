@@ -4,7 +4,7 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
 import { Reflector } from '@nestjs/core';
 import helmet from 'helmet';
-import * as cookieParser from 'cookie-parser';
+import cookieParser from 'cookie-parser';
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 
@@ -19,12 +19,32 @@ async function bootstrap() {
   app.use(helmet());
   app.use(cookieParser());
 
-  // CORS configurado para frontend React
+  // CORS configurado para frontend React - Permite múltiples orígenes
+  const corsOrigins = configService.get('CORS_ORIGIN', 'http://localhost:2769');
+  const allowedOrigins = corsOrigins.split(',').map((origin: string) => origin.trim());
+  
   app.enableCors({
-    origin: configService.get('CORS_ORIGIN', 'http://localhost:5173'),
+    origin: (origin, callback) => {
+      // Permitir peticiones sin origin (como Postman, curl, apps móviles)
+      if (!origin) {
+        return callback(null, true);
+      }
+      
+      // Verificar si el origin está en la lista de permitidos
+      if (allowedOrigins.includes(origin) || allowedOrigins.includes('*')) {
+        return callback(null, true);
+      }
+      
+      // Rechazar otros orígenes
+      console.log(`❌ CORS: Origen rechazado - ${origin}`);
+      console.log(`✅ CORS: Orígenes permitidos - ${allowedOrigins.join(', ')}`);
+      callback(new Error('Not allowed by CORS'));
+    },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
+    exposedHeaders: ['Set-Cookie'],
+    maxAge: 86400, // 24 horas de cache para preflight requests
   });
 
   // Pipes globales
