@@ -60,14 +60,32 @@ export class PokemonQueryDto {
 
 export class PokemonDetailDto extends PokemonListDto {
   moves?: Array<{
+    level: number;
     name: string;
-    learnMethod: string;
-    level?: number;
+    type: string;
+    power: number | null;
+    accuracy: number | null;
+    pp: number;
+    damageClass: string;
   }>;
   stats?: Array<{
     name: string;
     baseStat: number;
     effort: number;
   }>;
+  classification?: {
+    isLegendary: boolean;
+    isMythical: boolean;
+    isBaby: boolean;
+    captureRate: number;
+    baseHappiness: number;
+    hatchCounter: number;
+    genderRate: number;
+    growthRate: string;
+    habitat: string | null;
+    color: string;
+    shape: string;
+    eggGroups: string[];
+  };
   evolutionChain?: any;
 }

@@ -119,3 +119,13 @@ dist
 # OS
 .DS_Store
 Thumbs.db
+
+# Documentación temporal (mantener solo README.md)
+*.md
+!README.md
+
+# Archivos temporales
+temp_*.json
+*.back
+*.bak
+*.bak+
