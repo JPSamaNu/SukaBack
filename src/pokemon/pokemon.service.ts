@@ -129,11 +129,13 @@ export class PokemonService {
     }
 
     // Obtener información adicional
-    const [types, abilities, stats, sprites] = await Promise.all([
+    const [types, abilities, stats, sprites, moves, classification] = await Promise.all([
       this.getPokemonTypes(id),
       this.getPokemonAbilities(id),
       this.getPokemonStats(id),
       this.getPokemonSprites(id),
+      this.getPokemonMovesByLevel(id),
+      this.getPokemonClassification(pokemon.speciesId),
     ]);
 
     return {
@@ -142,6 +144,8 @@ export class PokemonService {
       abilities,
       stats,
       sprites,
+      moves,
+      classification,
     };
   }
 
@@ -204,6 +208,110 @@ export class PokemonService {
     `;
     const [result] = await this.pokemonRepository.query(query, [pokemonId]);
     return result?.sprites || null;
+  }
+
+  /**
+   * Obtener movimientos que aprende por nivel
+   */
+  private async getPokemonMovesByLevel(pokemonId: number): Promise<Array<{ 
+    level: number; 
+    name: string; 
+    type: string;
+    power: number | null;
+    accuracy: number | null;
+    pp: number;
+    damageClass: string;
+  }>> {
+    const query = `
+      SELECT DISTINCT ON (m.id, pm.level)
+        pm.level,
+        m.name,
+        t.name as type,
+        m.power,
+        m.accuracy,
+        m.pp,
+        dc.name as "damageClass"
+      FROM pokemon_v2_pokemonmove pm
+      INNER JOIN pokemon_v2_move m ON pm.move_id = m.id
+      INNER JOIN pokemon_v2_type t ON m.type_id = t.id
+      INNER JOIN pokemon_v2_movedamageclass dc ON m.move_damage_class_id = dc.id
+      INNER JOIN pokemon_v2_movelearnmethod mlm ON pm.move_learn_method_id = mlm.id
+      WHERE pm.pokemon_id = $1 
+        AND mlm.name = 'level-up'
+        AND pm.level IS NOT NULL
+      ORDER BY m.id, pm.level, pm.level ASC, m.name
+    `;
+    
+    const results = await this.pokemonRepository.query(query, [pokemonId]);
+    
+    // Eliminar duplicados manualmente si es necesario
+    const uniqueMoves = new Map();
+    results.forEach((move: any) => {
+      const key = `${move.name}-${move.level}`;
+      if (!uniqueMoves.has(key)) {
+        uniqueMoves.set(key, move);
+      }
+    });
+    
+    return Array.from(uniqueMoves.values()).sort((a, b) => a.level - b.level);
+  }
+
+  /**
+   * Obtener clasificación del Pokémon (legendario, mítico, bebé, etc.)
+   */
+  private async getPokemonClassification(speciesId: number): Promise<{
+    isLegendary: boolean;
+    isMythical: boolean;
+    isBaby: boolean;
+    captureRate: number;
+    baseHappiness: number;
+    hatchCounter: number;
+    genderRate: number;
+    growthRate: string;
+    habitat: string | null;
+    color: string;
+    shape: string;
+    eggGroups: string[];
+  }> {
+    // Obtener datos de species
+    const speciesQuery = `
+      SELECT 
+        ps.is_legendary as "isLegendary",
+        ps.is_mythical as "isMythical",
+        ps.is_baby as "isBaby",
+        ps.capture_rate as "captureRate",
+        ps.base_happiness as "baseHappiness",
+        ps.hatch_counter as "hatchCounter",
+        ps.gender_rate as "genderRate",
+        gr.name as "growthRate",
+        ph.name as habitat,
+        pc.name as color,
+        psh.name as shape
+      FROM pokemon_v2_pokemonspecies ps
+      LEFT JOIN pokemon_v2_growthrate gr ON ps.growth_rate_id = gr.id
+      LEFT JOIN pokemon_v2_pokemonhabitat ph ON ps.pokemon_habitat_id = ph.id
+      LEFT JOIN pokemon_v2_pokemoncolor pc ON ps.pokemon_color_id = pc.id
+      LEFT JOIN pokemon_v2_pokemonshape psh ON ps.pokemon_shape_id = psh.id
+      WHERE ps.id = $1
+    `;
+    
+    const [species] = await this.pokemonRepository.query(speciesQuery, [speciesId]);
+    
+    // Obtener grupos de huevo
+    const eggGroupsQuery = `
+      SELECT eg.name
+      FROM pokemon_v2_pokemonegggroup peg
+      INNER JOIN pokemon_v2_egggroup eg ON peg.egg_group_id = eg.id
+      WHERE peg.pokemon_species_id = $1
+    `;
+    
+    const eggGroupsResults = await this.pokemonRepository.query(eggGroupsQuery, [speciesId]);
+    const eggGroups = eggGroupsResults.map((r: any) => r.name);
+    
+    return {
+      ...species,
+      eggGroups,
+    };
   }
 
   /**
