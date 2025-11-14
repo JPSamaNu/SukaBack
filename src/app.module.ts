@@ -11,6 +11,7 @@ import { MovesModule } from './moves/moves.module';
 import { ItemsModule } from './items/items.module';
 import { BerriesModule } from './berries/berries.module';
 import { GamesModule } from './games/games.module';
+import { TeamsModule } from './teams/teams.module';
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { GamesModule } from './games/games.module';
     
     // Módulos principales
     DatabaseModule,
+    TeamsModule, // Movido al inicio para debugging
     AuthModule,
     UsersModule,
     PokemonModule,
